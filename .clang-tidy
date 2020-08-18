@@ -1,0 +1,8 @@
+Checks: >
+  *,
+  -fuchsia-*,
+  -google-*,
+  -bugprone-exception-escape,
+  -hicpp-vararg,
+  -modernize-use-trailing-return-type,
+  -readability-named-parameter
