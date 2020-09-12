@@ -1,0 +1,9 @@
+{
+    "name": "nes-emulator",
+    "version-string": "0.0.1",
+    "dependencies": [
+        "spdlog",
+        "catch2",
+        "sdl2"
+    ]
+}

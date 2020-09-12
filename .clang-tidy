@@ -2,6 +2,7 @@ Checks: >
   *,
   -fuchsia-*,
   -google-*,
+  -hicpp-*,
   -bugprone-exception-escape,
   -hicpp-vararg,
   -modernize-use-trailing-return-type,

@@ -20,8 +20,9 @@ inline bool accumulator(cpu_state&, fetching_address&, bool) noexcept {
     return true;
 }
 
-constexpr bool immediate(cpu_state& cpu, fetching_address&, bool) noexcept {
-    cpu.address_bus = cpu.pc++;
+constexpr bool immediate(cpu_state& cpu, fetching_address& state, bool) noexcept {
+    state.address = cpu.pc++;
+    cpu.address_bus = state.address;
     return true;
 }
 
@@ -29,8 +30,16 @@ constexpr bool zero_page_indexed(cpu_state& cpu, fetching_address& state,
                                  std::optional<u8> index) noexcept {
     switch (state.cycle++) {
     case 0: cpu.address_bus = cpu.pc++; return false;
-    case 1: cpu.address_bus = cpu.data_bus; return !index;
-    case 2: cpu.address_bus = (cpu.address_bus + *index) & 0xff; return true;
+    case 1: {
+        state.address = cpu.data_bus;
+        cpu.address_bus = state.address;
+        return !index;
+    }
+    case 2: {
+        state.address = (state.address + *index) & 0xff;
+        cpu.address_bus = state.address;
+        return true;
+    }
     default: assert(false); return true;
     }
 }
@@ -65,7 +74,8 @@ constexpr bool absolute_indexed(cpu_state& cpu, fetching_address& state, bool sk
             cpu.address_bus = adh | (adl & 0xff);
             return skip_same_page_cycle && !page_boundary_crossed;
         } else {
-            cpu.address_bus = (cpu.data_bus << 8) | state.address;
+            state.address = (cpu.data_bus << 8) | state.address;
+            cpu.address_bus = state.address;
             return true;
         }
     }
@@ -89,14 +99,26 @@ constexpr bool absolute_y(cpu_state& cpu, fetching_address& state,
 constexpr bool indirect_x(cpu_state& cpu, fetching_address& state, bool) noexcept {
     switch (state.cycle++) {
     case 0: cpu.address_bus = cpu.pc++; return false;
-    case 1: cpu.address_bus = cpu.data_bus; return false;
-    case 2: cpu.address_bus = (cpu.address_bus + cpu.x) & 0x00ff; return false;
-    case 3: {
+    case 1: {
         state.address = cpu.data_bus;
-        cpu.address_bus = (cpu.address_bus + 1) & 0x00ff;
+        cpu.address_bus = state.address;
         return false;
     }
-    case 4: cpu.address_bus = (cpu.data_bus << 8) | state.address; return true;
+    case 2: {
+        state.address = (state.address + cpu.x) & 0x00ff;
+        cpu.address_bus = state.address;
+        return false;
+    }
+    case 3: {
+        cpu.address_bus = (state.address + 1) & 0x00ff;
+        state.address = cpu.data_bus;
+        return false;
+    }
+    case 4: {
+        state.address = (cpu.data_bus << 8) | state.address;
+        cpu.address_bus = state.address;
+        return true;
+    }
     default: assert(false); return true;
     }
 }
@@ -105,9 +127,13 @@ constexpr bool indirect_y(cpu_state& cpu, fetching_address& state,
                           bool skip_same_page_cycle) noexcept {
     switch (state.cycle++) {
     case 0: cpu.address_bus = cpu.pc++; return false;
-    case 1: cpu.address_bus = cpu.data_bus; return false;
+    case 1: {
+        state.address = cpu.data_bus;
+        cpu.address_bus = state.address;
+        return false;
+    }
     case 2: {
-        cpu.address_bus = (cpu.address_bus + 1) & 0x00ff;
+        cpu.address_bus = (state.address + 1) & 0x00ff;
         state.address = cpu.data_bus;
         return false;
     }
@@ -131,8 +157,8 @@ constexpr bool indirect(cpu_state& cpu, fetching_address& state, bool) noexcept 
         return false;
     }
     case 1: {
-        cpu.address_bus = cpu.pc;
-        state.address = cpu.data_bus; // fetch IAH
+        cpu.address_bus = cpu.pc; // fetch IAH
+        state.address = cpu.data_bus;
         return false;
     }
     case 2: {
@@ -146,7 +172,8 @@ constexpr bool indirect(cpu_state& cpu, fetching_address& state, bool) noexcept 
         return false;
     }
     case 4: {
-        cpu.address_bus = (cpu.data_bus << 8) | (state.address & 0x00ffu);
+        state.address = (cpu.data_bus << 8) | (state.address & 0x00ffu);
+        cpu.address_bus = state.address;
         return true;
     }
     default: assert(false); return true;

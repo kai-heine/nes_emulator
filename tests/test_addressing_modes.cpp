@@ -12,6 +12,7 @@ TEST_CASE("immediate", "[addressing modes]") {
     CHECK(finished);
     CHECK(cpu.address_bus == 42);
     CHECK(cpu.pc == 43);
+    CHECK(state.address == cpu.address_bus);
 }
 
 TEST_CASE("zero_page", "[addressing modes]") {
@@ -29,6 +30,7 @@ TEST_CASE("zero_page", "[addressing modes]") {
     CHECK(finished);
     CHECK(cpu.address_bus == 34);
     CHECK(cpu.pc == 43);
+    CHECK(state.address == cpu.address_bus);
 }
 
 TEST_CASE("zero_page_indexed", "[addressing modes]") {
@@ -52,6 +54,7 @@ TEST_CASE("zero_page_indexed", "[addressing modes]") {
         CHECK(finished);
         CHECK(cpu.address_bus == 0x0000);
         CHECK(cpu.pc == 43);
+        CHECK(state.address == cpu.address_bus);
     }
 }
 
@@ -77,6 +80,7 @@ TEST_CASE("absolute", "[addressing modes]") {
     CHECK(finished);
     CHECK(cpu.address_bus == 0x1234);
     CHECK(cpu.pc == 44);
+    CHECK(state.address == cpu.address_bus);
 }
 
 TEST_CASE("absolute_indexed", "[addressing modes]") {
@@ -103,6 +107,7 @@ TEST_CASE("absolute_indexed", "[addressing modes]") {
             CHECK(finished);
             CHECK(cpu.address_bus == 0x1244);
             CHECK(cpu.pc == 44);
+            CHECK(state.address == cpu.address_bus);
         }
     }
 
@@ -134,6 +139,7 @@ TEST_CASE("absolute_indexed", "[addressing modes]") {
             CHECK(finished);
             CHECK(cpu.address_bus == 0x0000);
             CHECK(cpu.pc == 44);
+            CHECK(state.address == cpu.address_bus);
         }
     }
 }
@@ -174,6 +180,7 @@ TEST_CASE("indirect_x", "[addressing modes]") {
     CHECK(finished);
     CHECK(cpu.address_bus == 0x1234);
     CHECK(cpu.pc == 43);
+    CHECK(state.address == cpu.address_bus);
 }
 
 TEST_CASE("indirect_y", "[addressing modes]") {
@@ -206,6 +213,7 @@ TEST_CASE("indirect_y", "[addressing modes]") {
         CHECK(finished);
         CHECK(cpu.address_bus == 0x1244);
         CHECK(cpu.pc == 43);
+        CHECK(state.address == cpu.address_bus);
     }
 
     SECTION("page boundary cross") {
@@ -244,6 +252,7 @@ TEST_CASE("indirect_y", "[addressing modes]") {
         CHECK(finished);
         CHECK(cpu.address_bus == 0x0000);
         CHECK(cpu.pc == 43);
+        CHECK(state.address == cpu.address_bus);
     }
 }
 
@@ -280,4 +289,5 @@ TEST_CASE("indirect", "[addressing modes]") {
     finished = indirect(cpu, state, false);
     CHECK(finished);
     CHECK(cpu.address_bus == 0xaa55);
+    CHECK(state.address == cpu.address_bus);
 }

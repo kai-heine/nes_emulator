@@ -425,6 +425,8 @@ constexpr array<instruction, 256> instruction_set{
 // clang-format on
 
 instruction_state step(cpu_state& cpu, instruction_state state) noexcept {
+    cpu.cycle_count++;
+
     // reset handling, probably wrong
     if (cpu.reset) {
         cpu = cpu_state{.reset_pending = true};

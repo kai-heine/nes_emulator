@@ -26,8 +26,6 @@ struct status_register {
 
 constexpr u8 break_bit = (1 << 4); // b flag
 
-enum class data_dir : bool { read, write };
-
 // TODO: better interface, enforce invariants? make internal stuff private?
 struct cpu_state {
     // external
@@ -53,6 +51,8 @@ struct cpu_state {
     bool reset_pending{false};
     bool nmi_pending{false};
     bool irq_pending{false};
+
+    u64 cycle_count{};
 };
 
 constexpr u16 stack_page = 0x0100;

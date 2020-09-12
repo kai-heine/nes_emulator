@@ -237,7 +237,7 @@ constexpr instruction_state jump_operation(cpu_state& cpu, instruction_state sta
             [&](fetching_address addressing_state) -> instruction_state {
                 if (fetch_address(cpu, addressing_state, false)) {
                     // jump address is on address bus
-                    cpu.pc = cpu.address_bus;
+                    cpu.pc = addressing_state.address;
                     fetch_opcode(cpu);
                     return fetching_address{};
                 } else {
@@ -385,7 +385,7 @@ constexpr instruction_state interrupt_sequence(cpu_state& cpu, instruction_state
                     return addressing_state;
                 }
                 case 4: {
-                    cpu.address_bus = [&] {
+                    addressing_state.address = [&] {
                         if (cpu.reset_pending) {
                             return reset_vector;
                         } else if (cpu.nmi_pending) {
@@ -394,6 +394,7 @@ constexpr instruction_state interrupt_sequence(cpu_state& cpu, instruction_state
                             return brk_irq_vector;
                         }
                     }();
+                    cpu.address_bus = addressing_state.address;
 
                     cpu.reset_pending = false;
                     cpu.nmi_pending = false;
@@ -403,7 +404,8 @@ constexpr instruction_state interrupt_sequence(cpu_state& cpu, instruction_state
                 }
                 case 5: {
                     cpu.pc = cpu.data_bus;
-                    cpu.address_bus++;
+                    addressing_state.address++;
+                    cpu.address_bus = addressing_state.address;
                     cpu.p.interrupt_disable = true;
                     return fetching_opcode{};
                 }
