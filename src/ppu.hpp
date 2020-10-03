@@ -43,12 +43,14 @@ struct ppu_memory_map {
     }
 };
 
+enum class pixels : bool { eight_by_eight, eight_by_sixteen };
+
 struct ppu_control_register {
     u16 nametable_base_address;
     u8 vram_address_increment;
     u16 sprite_pattern_table_address;
     u16 background_pattern_table_address;
-    enum class pixels : bool { eight_by_eight, eight_by_sixteen } sprite_size;
+    pixels sprite_size;
     bool ext_master;
     bool generate_vblank_nmi;
 
@@ -100,22 +102,78 @@ struct vram_address_register {
     u8 fine_y_scroll : 3 {0};
 
     constexpr vram_address_register& operator=(u16 value) noexcept {
-        coarse_x_scroll = value & 0x1fu;
-        coarse_y_scroll = (value >> 5u) & 0x1fu;
-        nametable_select = (value >> 10u) & 0x03u;
-        fine_y_scroll = (value >> 12u) & 0x07u;
+        coarse_x_scroll = value & 0x1f;
+        coarse_y_scroll = (value >> 5) & 0x1f;
+        nametable_select = (value >> 10) & 0x03;
+        fine_y_scroll = (value >> 12) & 0x07;
         return *this;
     }
 
     constexpr operator u16() const noexcept {
-        return static_cast<u16>((fine_y_scroll << 12u) | (nametable_select << 10u) |
-                                (coarse_y_scroll << 5u) | coarse_x_scroll);
+        return static_cast<u16>((fine_y_scroll << 12) | (nametable_select << 10) |
+                                (coarse_y_scroll << 5) | coarse_x_scroll);
     }
 
     constexpr vram_address_register& operator+=(u16 increment) noexcept {
         *this = (static_cast<u16>(*this) + increment);
         return *this;
     }
+};
+
+template <typename Plane>
+struct shift_register {
+    Plane upper{};
+    Plane lower{};
+
+    // overwrites the (least significant) bytes of the shift register
+    constexpr void reload(u8 upper_plane, u8 lower_plane) noexcept {
+        upper = (upper & ~0xff) | upper_plane;
+        lower = (lower & ~0xff) | lower_plane;
+    }
+
+    // shifts the shift register by one bit, optionally shifting in the lower two input bits
+    constexpr void shift(u8 input = 0) noexcept {
+        upper = (upper << 1) | ((input >> 1) & 0x01);
+        lower = (lower << 1) | ((input >> 0) & 0x01);
+    }
+
+    // returns the two bits at the specified position in the lower two bits of the return value
+    constexpr u8 at(u8 bit_index) const noexcept {
+        return ((((upper >> ((sizeof(Plane) - 1) * 8)) << (bit_index % 8)) >> 6) & 0x02) |
+               ((((lower >> ((sizeof(Plane) - 1) * 8)) << (bit_index % 8)) >> 7) & 0x01);
+    }
+};
+
+struct sprite_attributes {
+    // 76543210
+    // ||||||||
+    // ||||||++- Palette (4 to 7) of sprite
+    // |||+++--- Unimplemented
+    // ||+------ Priority (0: in front of background; 1: behind background)
+    // |+------- Flip sprite horizontally
+    // +-------- Flip sprite vertically
+    u8 value{};
+
+    constexpr operator u8&() noexcept { return value; }
+
+    constexpr u8 palette() const noexcept { return value & 0x03; }
+    constexpr bool has_priority() const noexcept { return (value & 0x20) == 0; }
+    constexpr bool flip_horizontally() const noexcept { return (value & 0x40) != 0; }
+    constexpr bool flip_vertically() const noexcept { return (value & 0x80) != 0; }
+};
+
+struct sprite_data {
+    shift_register<u8> pattern_shift_reg{};
+    sprite_attributes attribute_latch{};
+    u8 x_position_counter{};
+};
+
+// oam entry
+struct sprite_info {
+    u8 y_position{0xff};
+    u8 tile_index{0xff}; // TODO make type
+    sprite_attributes attributes{0xff};
+    u8 x_position{0xff};
 };
 
 struct picture_processing_unit {
@@ -145,9 +203,6 @@ struct picture_processing_unit {
     }
 
   private:
-    // internal
-
-    // TODO: make them structs like the cpu status register?
     ppu_control_register ppu_ctrl{0};
     ppu_mask_register ppu_mask{0};
     ppu_status_register ppu_status{};
@@ -156,16 +211,10 @@ struct picture_processing_unit {
     bool odd_frame{false}; // TODO?
 
     array<u8, 32> palette_ram{};
-    array<u8, 256> object_attribute_memory{};
-    array<u8, 32> secondary_oam{};
 
-    // v and t registers:
-    // yyy NN YYYYY XXXXX
-    // ||| || ||||| +++++-- coarse X scroll
-    // ||| || +++++-------- coarse Y scroll
-    // ||| ++-------------- nametable select
-    // +++----------------- fine Y scroll
-    // TODO: types!
+    array<sprite_info, 64> primary_oam{};
+    array<sprite_info, 8> secondary_oam{};
+
     vram_address_register current_vram_address{};   // "v" register
     vram_address_register temporary_vram_address{}; // "t" register
     u8 fine_x_scroll : 3 {};                        // "x" register
@@ -201,22 +250,20 @@ struct picture_processing_unit {
     u8 lower_background_pattern{0};
     u8 upper_background_pattern{0};
 
-    // TODO: types for this might be useful
-    // TODO: maybe a single array with complete addresses?
     // 2 16 bit shift registers for pattern table data for two tiles (upper and lower planes)
-    u16 upper_background_pattern_shift_reg{0};
-    u16 lower_background_pattern_shift_reg{0};
+    shift_register<u16> background_pattern_shift_reg{};
 
     // 2 8 bit shift registers for palette attributes for current tile (two bits of palette index)
-    u8 upper_background_palette_shift_reg{0};
-    u8 lower_background_palette_shift_reg{0};
+    shift_register<u8> background_palette_shift_reg{};
     // 2 1-bit latches that feed the shift regs
     u8 background_palette_latch : 2 {0};
+
+    array<sprite_data, 8> sprites{};
 
     u8 internal_data_latch{0};  // TODO: decay?
     u8 internal_read_buffer{0}; // updated when reading PPUDATA
 
-    vector<u8> frame_buffer = vector<u8>(256u * 240u);
+    vector<u8> frame_buffer = vector<u8>(256 * 240);
     u16 current_pixel{0};
     bool frame_buffer_valid = false; // frame buffer contains a complete image (in vblank)
 
@@ -224,11 +271,13 @@ struct picture_processing_unit {
     // called from step()
     void handle_register_access() noexcept;
 
-    void render_background() noexcept;
+    void render_pixel() noexcept;
     void reload_shift_regs() noexcept;
-    void fetch_vram() noexcept;
+    void fetch_background_data() noexcept;
+    void fetch_sprite_data() noexcept;
+    void evaluate_sprites() noexcept;
     void update_vram_address() noexcept;
-    void shift_registers()noexcept;
+    void shift_registers() noexcept;
 
     constexpr bool rendering_enabled() const noexcept {
         return ppu_mask.show_background || ppu_mask.show_sprites;

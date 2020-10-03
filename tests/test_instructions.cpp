@@ -379,7 +379,7 @@ TEST_CASE("interrupt_sequence", "[instructions]") {
         cpu.data_bus = 0x34;
 
         state = interrupt_sequence(cpu, state);
-        CHECK(cpu.address_bus == (brk_irq_vector + 1u));
+        CHECK(cpu.address_bus == (brk_irq_vector + 1));
         CHECK(cpu.rw == data_dir::read);
 
         cpu.data_bus = 0x12;
@@ -425,7 +425,7 @@ TEST_CASE("interrupt_sequence", "[instructions]") {
         cpu.data_bus = 0x34;
 
         state = interrupt_sequence(cpu, state);
-        CHECK(cpu.address_bus == (brk_irq_vector + 1u));
+        CHECK(cpu.address_bus == (brk_irq_vector + 1));
         CHECK(cpu.rw == data_dir::read);
 
         cpu.data_bus = 0x12;
@@ -472,7 +472,7 @@ TEST_CASE("interrupt_sequence", "[instructions]") {
         cpu.data_bus = 0x34;
 
         state = interrupt_sequence(cpu, state);
-        CHECK(cpu.address_bus == (nmi_vector + 1u));
+        CHECK(cpu.address_bus == (nmi_vector + 1));
         CHECK(cpu.rw == data_dir::read);
 
         cpu.data_bus = 0x12;
@@ -519,7 +519,7 @@ TEST_CASE("interrupt_sequence", "[instructions]") {
         cpu.data_bus = 0x34;
 
         state = interrupt_sequence(cpu, state);
-        CHECK(cpu.address_bus == (reset_vector + 1u));
+        CHECK(cpu.address_bus == (reset_vector + 1));
         CHECK(cpu.rw == data_dir::read);
 
         cpu.data_bus = 0x12;

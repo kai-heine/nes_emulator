@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 using namespace nes;
 
 // TODO: load colors from .pal file
-constexpr array<SDL_Color, 64u> nes_color_palette{{
+constexpr array<SDL_Color, 64> nes_color_palette{{
     {84, 84, 84, 255},    {0, 30, 116, 255},    {8, 16, 144, 255},    {48, 0, 136, 255},
     {68, 0, 100, 255},    {92, 0, 48, 255},     {84, 4, 0, 255},      {60, 24, 0, 255},
     {32, 42, 0, 255},     {8, 58, 0, 255},      {0, 64, 0, 255},      {0, 60, 0, 255},
@@ -104,6 +104,8 @@ int main(int argc, char** argv) {
         auto log = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("nes");
         log->set_pattern("%^%v%$");
         // log->set_level(spdlog::level::debug);
+
+        spdlog::enable_backtrace(10);
 
         fs::path rom_file{argc > 1 ? argv[1] : "smb.nes"};
         log->info("ROM: {}, file size: {} bytes", fs::absolute(rom_file).string(),

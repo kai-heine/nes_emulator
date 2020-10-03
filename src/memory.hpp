@@ -20,7 +20,7 @@ struct cpu_memory_map {
     constexpr void set_address(u16 address) {
         address_ = address;
 
-        if ((0x2000u <= address) && (address < 0x4020u)) {
+        if ((0x2000 <= address) && (address < 0x4000)) {
             ppu_.cpu_address_bus = address;
             ppu_.cpu_register_access = data_dir::read;
         }

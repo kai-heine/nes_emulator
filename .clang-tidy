@@ -4,6 +4,9 @@ Checks: >
   -google-*,
   -hicpp-*,
   -bugprone-exception-escape,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
   -hicpp-vararg,
   -modernize-use-trailing-return-type,
+  -readability-magic-numbers,
   -readability-named-parameter
