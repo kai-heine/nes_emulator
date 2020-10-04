@@ -1,3 +1,4 @@
+#include "controller.hpp"
 #include "cpu/cpu.hpp"
 #include "cpu/instructions.hpp"
 #include "oam_dma.hpp"
@@ -99,8 +100,58 @@ std::optional<rom_header_info> read_header(array<u8, 16> const& header) {
     return rom_header_info{prg_rom_size, chr_rom_size, mapper, nametable_mirroring};
 }
 
+// TODO button mapping etc.
+class game_controller {
+  public:
+    game_controller() {
+        for (int i = 0; i < std::min(SDL_NumJoysticks(), 2); ++i) {
+            if (SDL_IsGameController(i)) {
+                controllers.emplace_back(sdl::make_scoped(SDL_GameControllerOpen(i)));
+            }
+        }
+    }
+
+    controller_states read_controllers() {
+
+        auto read_controller = [](auto& controller) {
+            controller_state state;
+            state.a = SDL_GameControllerGetButton(controller.get(), SDL_CONTROLLER_BUTTON_A) != 0;
+            state.b = SDL_GameControllerGetButton(controller.get(), SDL_CONTROLLER_BUTTON_X) != 0;
+            state.select =
+                SDL_GameControllerGetButton(controller.get(), SDL_CONTROLLER_BUTTON_BACK) != 0;
+            state.start =
+                SDL_GameControllerGetButton(controller.get(), SDL_CONTROLLER_BUTTON_START) != 0;
+            state.up =
+                SDL_GameControllerGetButton(controller.get(), SDL_CONTROLLER_BUTTON_DPAD_UP) != 0;
+            state.down =
+                SDL_GameControllerGetButton(controller.get(), SDL_CONTROLLER_BUTTON_DPAD_DOWN) != 0;
+            state.left =
+                SDL_GameControllerGetButton(controller.get(), SDL_CONTROLLER_BUTTON_DPAD_LEFT) != 0;
+            state.right = SDL_GameControllerGetButton(controller.get(),
+                                                      SDL_CONTROLLER_BUTTON_DPAD_RIGHT) != 0;
+            return state;
+        };
+
+        controller_states states;
+
+        if (controllers.size() > 0) {
+            states.joy1 = read_controller(controllers[0]);
+        }
+        if (controllers.size() > 1) {
+            states.joy1 = read_controller(controllers[1]);
+        }
+
+        return states;
+    }
+
+  private:
+    vector<sdl::ptr<SDL_GameController>> controllers;
+};
+
 int main(int argc, char** argv) {
     try {
+        sdl::initializer sdl_init{SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER};
+
         auto log = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("nes");
         log->set_pattern("%^%v%$");
         // log->set_level(spdlog::level::debug);
@@ -135,9 +186,6 @@ int main(int argc, char** argv) {
             std::exit(EXIT_FAILURE);
         }
 
-        array<u8, 2048> ram{};
-        picture_processing_unit ppu;
-
         cartridge cart;
         cart.nametable_mirroring = header_info->nametable_mirroring;
         cart.prg_ram.resize(8192);
@@ -146,25 +194,45 @@ int main(int argc, char** argv) {
         cart.chr_rom.resize(header_info->chr_rom_size);
         rom.read(reinterpret_cast<char*>(cart.chr_rom.data()), header_info->chr_rom_size);
 
-        cpu_memory_map memory{ram, ppu, cart};
-        cpu_state cpu{.reset_pending = true};
-        instruction_state state{fetching_address{}};
-        optional<oam_dma_state> oam_dma;
+        array<u8, 2048> ram{};
 
+        picture_processing_unit ppu;
         ppu_memory_map video_memory{.cart = cart};
 
-        sdl::initializer sdl_init{SDL_INIT_VIDEO};
+        game_controller controller_manager;
+        controller_port controller;
+        controller.read_controller = [&] { return controller_manager.read_controllers(); };
+
+        cpu_memory_map memory{ram, ppu, cart, controller};
+        cpu_state cpu{.reset_pending = true};
+        instruction_state state{fetching_address{}};
+
+        optional<oam_dma_state> oam_dma;
 
         auto window = sdl::make_scoped(SDL_CreateWindow("NES Emulator", SDL_WINDOWPOS_CENTERED,
                                                         SDL_WINDOWPOS_CENTERED, 256 * 2, 240 * 2,
                                                         SDL_WINDOW_RESIZABLE));
         auto renderer = sdl::make_scoped(SDL_CreateRenderer(
             window.get(), -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC));
-        auto surface = sdl::make_scoped(SDL_CreateRGBSurfaceWithFormatFrom(
-            ppu.get_frame_buffer(), 256, 240, 8, 256, SDL_PIXELFORMAT_INDEX8));
 
-        SDL_SetPaletteColors(surface->format->palette, nes_color_palette.data(), 0,
+        auto const pixel_format = [&]() {
+            SDL_RendererInfo info{};
+            SDL_GetRendererInfo(renderer.get(), &info);
+            return info.texture_formats[0];
+        }();
+
+        // source image with color palette
+        auto picture_surface = sdl::make_scoped(SDL_CreateRGBSurfaceWithFormatFrom(
+            ppu.get_frame_buffer(), 256, 240, 8, 256, SDL_PIXELFORMAT_INDEX8));
+        SDL_SetPaletteColors(picture_surface->format->palette, nes_color_palette.data(), 0,
                              static_cast<int>(nes_color_palette.size()));
+
+        // surface and texture with a more native pixel format for rendering
+        auto render_surface = sdl::make_scoped(
+            SDL_CreateRGBSurface(0, picture_surface->w, picture_surface->h, 32, 0, 0, 0, 0));
+        auto render_texture = sdl::make_scoped(
+            SDL_CreateTexture(renderer.get(), pixel_format, SDL_TEXTUREACCESS_STREAMING,
+                              picture_surface->w, picture_surface->h));
 
         log->debug("  ab   db pc   a  x  y  s  ir");
 
@@ -210,17 +278,29 @@ int main(int argc, char** argv) {
             }
 
             SDL_Event e;
-            if (SDL_PollEvent(&e) == 1) {
+            while (SDL_PollEvent(&e) == 1) {
                 if (e.type == SDL_QUIT) {
-                    break;
+                    return 0;
                 }
             }
 
-            auto texture =
-                sdl::make_scoped(SDL_CreateTextureFromSurface(renderer.get(), surface.get()));
+            // this converts the pixel format
+            sdl::checked(
+                SDL_BlitSurface(picture_surface.get(), nullptr, render_surface.get(), nullptr));
 
-            SDL_RenderClear(renderer.get());
-            SDL_RenderCopy(renderer.get(), texture.get(), nullptr, nullptr);
+            {
+                // this just copies
+                void* pixels{nullptr};
+                int pitch{};
+
+                sdl::checked(SDL_LockTexture(render_texture.get(), NULL, &pixels, &pitch));
+                sdl::checked(SDL_ConvertPixels(
+                    render_surface->w, render_surface->h, render_surface->format->format,
+                    render_surface->pixels, render_surface->pitch, pixel_format, pixels, pitch));
+                SDL_UnlockTexture(render_texture.get());
+            }
+
+            sdl::checked(SDL_RenderCopy(renderer.get(), render_texture.get(), nullptr, nullptr));
             SDL_RenderPresent(renderer.get());
         }
     } catch (std::exception const& e) {
