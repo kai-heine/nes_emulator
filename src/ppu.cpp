@@ -29,7 +29,7 @@ constexpr u8& oam_raw_access(std::span<sprite_info> oam, std::size_t address) no
     std::size_t const sprite_index = address / 4;
     std::size_t const selector = address % 4;
     switch (selector) {
-    default: assert(selector < 4); [[fallthrough]]; // silence a nonsensical warning
+    default: // silence a nonsensical warning
     case 0: return oam[sprite_index].y_position;
     case 1: return oam[sprite_index].tile_index;
     case 2: return oam[sprite_index].attributes;
@@ -171,9 +171,7 @@ void picture_processing_unit::handle_register_access() noexcept {
 }
 
 void picture_processing_unit::render_pixel() noexcept {
-    if (!rendering_enabled()) {
-        return;
-    }
+    assert(rendering_enabled());
 
     if (!in_visible_scanline()) {
         return;
@@ -458,6 +456,8 @@ void picture_processing_unit::update_vram_address() noexcept {
 }
 
 void picture_processing_unit::shift_registers() noexcept {
+    assert(rendering_enabled());
+
     if (!(in_visible_scanline() || in_pre_render_scanline())) {
         return;
     }

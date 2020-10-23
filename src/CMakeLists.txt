@@ -2,6 +2,7 @@ add_library(nes_emulator_lib OBJECT
     cpu/addressing_modes.hpp
     cpu/cpu.hpp
     cpu/instructions.hpp     cpu/instructions.cpp
+    apu.hpp                  apu.cpp
     cartridge.hpp
     controller.hpp
     memory.hpp               memory.cpp
