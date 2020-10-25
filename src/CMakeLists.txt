@@ -6,6 +6,7 @@ add_library(nes_emulator_lib OBJECT
     cartridge.hpp
     controller.hpp
     memory.hpp               memory.cpp
+    nes.hpp                  nes.cpp
     oam_dma.hpp
     ppu.hpp                  ppu.cpp
     types.hpp                types.cpp

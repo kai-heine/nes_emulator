@@ -1,21 +1,13 @@
-#include "controller.hpp"
-#include "cpu/cpu.hpp"
-#include "cpu/instructions.hpp"
-#include "oam_dma.hpp"
-#include "types.hpp"
+#include "nes.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
-#include <fmt/chrono.h>
 #include <fstream>
-#include <optional>
 #include <spdlog/spdlog.h>
 #include <thread>
 
-#include <spdlog/async.h>
 #include <spdlog/fmt/bin_to_hex.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "sdl_helper.hpp"
 #include <SDL2/SDL.h>
@@ -179,9 +171,12 @@ int main(int argc, char** argv) {
                      header_info->chr_rom_size, header_info->mapper);
 
         if (header_info->mapper != mapper_id::nrom) {
+            // TODO other mappers
             spdlog::critical("Unsupported mapper");
             std::exit(EXIT_FAILURE);
         }
+
+        game_controller controller_manager;
 
         cartridge cart;
         cart.nametable_mirroring = header_info->nametable_mirroring;
@@ -191,34 +186,10 @@ int main(int argc, char** argv) {
         cart.chr_rom.resize(header_info->chr_rom_size);
         rom.read(reinterpret_cast<char*>(cart.chr_rom.data()), header_info->chr_rom_size);
 
-        array<u8, 2048> ram{};
-
-        picture_processing_unit ppu;
-        ppu_memory_map video_memory{.cart = cart};
-
-        game_controller controller_manager;
-        controller_port controller;
-        controller.read_controller = [&] { return controller_manager.read_controllers(); };
-
-        audio_processing_unit apu;
-
-        cpu_memory_map memory{ram, ppu, cart, controller, apu};
-        cpu_state cpu{.reset_pending = true};
-        instruction_state state{fetching_address{}};
-
-        optional<oam_dma_state> oam_dma;
-
-        SPDLOG_TRACE("  ab   db pc   a  x  y  s  ir");
+        nintendo_entertainment_system nes{std::move(cart)};
+        nes.set_controller_callback([&] { return controller_manager.read_controllers(); });
 
         // ************************************************************************************
-
-        auto audio_callback = [](void* userdata, u8* stream, int len) {
-            auto* apu = static_cast<audio_processing_unit*>(userdata);
-            auto* sample_buffer = reinterpret_cast<float*>(stream);
-            auto num_samples = static_cast<std::size_t>(len / sizeof(float));
-
-            apu->read_samples({sample_buffer, num_samples});
-        };
 
         SDL_AudioSpec audio_desired{
             .freq = audio_processing_unit::sample_rate,
@@ -252,7 +223,7 @@ int main(int argc, char** argv) {
 
         // source image with color palette
         auto picture_surface = sdl::make_scoped(SDL_CreateRGBSurfaceWithFormatFrom(
-            ppu.get_frame_buffer(), 256, 240, 8, 256, SDL_PIXELFORMAT_INDEX8));
+            nes.frame_buffer(), 256, 240, 8, 256, SDL_PIXELFORMAT_INDEX8));
         SDL_SetPaletteColors(picture_surface->format->palette, nes_color_palette.data(), 0,
                              static_cast<int>(nes_color_palette.size()));
 
@@ -270,55 +241,13 @@ int main(int argc, char** argv) {
                            static_cast<u32>(silence.size() * sizeof(float)));
         }
 
-        auto start = std::chrono::steady_clock::now();
+        using namespace std::chrono;
+        using namespace std::chrono_literals;
+
+        auto start = steady_clock::now();
 
         while (true) {
-            // TODO move into "nes" or "emulator" module
-            while (!ppu.has_frame_buffer()) {
-
-                if (oam_dma) {
-                    oam_dma = step(cpu, *oam_dma);
-                } else {
-                    state = step(cpu, state);
-                }
-
-                SPDLOG_TRACE("- {:04x} {:02x} {:04x} {:02x} {:02x} {:02x} {:02x} {:02x} {}",
-                             cpu.address_bus, cpu.data_bus, cpu.pc, cpu.a, cpu.x, cpu.y, cpu.s,
-                             cpu.instruction_register, instruction_names[cpu.instruction_register]);
-
-                memory.set_address(cpu.address_bus);
-
-                if (cpu.rw == data_dir::write) {
-                    if (cpu.address_bus == 0x4014) {
-                        oam_dma = oam_dma_state(cpu.data_bus, (cpu.cycle_count % 2 == 0));
-                    } else {
-                        memory.write(cpu.data_bus);
-                    }
-                }
-
-                for (u8 i = 0; i < 3; i++) {
-                    ppu.step();
-
-                    if (ppu.video_memory_access) {
-                        if (*ppu.video_memory_access == data_dir::read) {
-                            ppu.video_data_bus = video_memory.read(ppu.video_address_bus);
-                        } else {
-                            video_memory.write(ppu.video_address_bus, ppu.video_data_bus);
-                        }
-                    }
-                }
-
-                cpu.nmi = ppu.nmi;
-
-                if (cpu.rw == data_dir::read) {
-                    cpu.data_bus = memory.read();
-                }
-
-                apu.step();
-                cpu.irq = apu.interrupt();
-            }
-
-            // **********************************************************************************
+            nes.run_single_frame();
 
             SDL_Event e;
             while (SDL_PollEvent(&e) == 1) {
@@ -327,7 +256,7 @@ int main(int argc, char** argv) {
                 }
             }
 
-            auto const samples = apu.get_sample_buffer();
+            auto const samples = nes.sample_buffer();
             SDL_QueueAudio(audio_device.get(), samples.data(),
                            static_cast<u32>(samples.size_bytes()));
 
@@ -350,9 +279,6 @@ int main(int argc, char** argv) {
             sdl::checked(SDL_RenderCopy(renderer.get(), render_texture.get(), nullptr, nullptr));
             SDL_RenderPresent(renderer.get());
 
-            using namespace std::chrono;
-            using namespace std::chrono_literals;
-
             // synchronize video to audio by waiting for number of samples / sample rate
             // TODO: find a better way
 
@@ -371,6 +297,8 @@ int main(int argc, char** argv) {
             start = steady_clock::now();
 
             // another approach to try: audio callback and wait depending on apu cycles
+            // or: wait more/less depending on distance between read and write pointer in audio
+            // buffer
         }
     } catch (std::exception const& e) {
         spdlog::critical("Error: {}", e.what());

@@ -7,42 +7,6 @@
 
 namespace nes {
 
-struct ppu_memory_map {
-    array<u8, 2048> vram{};
-    cartridge& cart;
-
-    constexpr u8 read(u16 address) const noexcept {
-        assert(address < 0x4000); // 14 bit address space
-
-        if (address < 0x2000) {
-            // pattern tables from chr-rom of cartridge
-            return cart.chr_rom[address];
-        } else {
-            // nametables
-            // ram with mirroring to fill 4kb
-            // (0x3000 - 0x3fff are mirrors of 0x2000 - 0x2eff)
-            switch (cart.nametable_mirroring) {
-                // TODO: make this part of cartridge?
-            case mirroring::horizontal: address &= ~(0x0400); break;
-            case mirroring::vertical: address &= ~(0x0800); break;
-            }
-            return vram[(address - 0x2000u) % vram.size()];
-        }
-    }
-
-    constexpr void write(u16 address, u8 value) noexcept {
-        assert(address < 0x4000);  // 14 bit address space
-        assert(address >= 0x2000); // TODO: CHR RAM
-        assert(address < 0x3f00);  // writes to palette ram should not assert /WR
-
-        switch (cart.nametable_mirroring) {
-        case mirroring::horizontal: address &= ~(0x0400); break;
-        case mirroring::vertical: address &= ~(0x0800); break;
-        }
-        vram[(address - 0x2000u) % vram.size()] = value;
-    }
-};
-
 enum class pixels : bool { eight_by_eight, eight_by_sixteen };
 
 struct ppu_control_register {

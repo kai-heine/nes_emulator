@@ -29,12 +29,14 @@ struct controller_states {
 };
 
 struct controller_port {
+    using callback_type = std::function<controller_states()>;
+
     bool controller_port_latch{false};
     u8 joy1_shift_reg{0};
     u8 joy2_shift_reg{0};
 
     // function that reads both controller ports
-    std::function<controller_states()> read_controller;
+    callback_type read_controller;
 
     u8 read(u16 address) noexcept {
         assert((address == 0x4016) || (address == 0x4017));
