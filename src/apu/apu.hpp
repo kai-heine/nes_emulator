@@ -1,10 +1,10 @@
-#ifndef NES_APU_HPP
-#define NES_APU_HPP
+#ifndef NES_APU_APU_HPP
+#define NES_APU_APU_HPP
 
+#include "dsp.hpp"
 #include "types.hpp"
 #include <algorithm>
 #include <cassert>
-#include <mutex>
 #include <span>
 
 namespace nes {
@@ -485,14 +485,22 @@ class audio_processing_unit {
             triangle_.half_frame_step();
         }
 
-        // sampling
-        // TODO: oversampling and low pass
-        constexpr std::size_t cycles_per_sample = 1789773 / sample_rate;
+        // 2x oversampling
+        constexpr std::size_t cycles_per_sample = 1789773 / (sample_rate * 2);
         cpu_cycle_count_++;
         if (cpu_cycle_count_ > cycles_per_sample) {
             cpu_cycle_count_ = 0; // rounding errors?
 
-            *write_pointer_++ = mix(pulse1_.output(), pulse2_.output(), triangle_.output(), 0, 0);
+            // TODO: stereo panning of channels would be cool
+
+            lpf.push_back(
+                hpf.process(mix(pulse1_.output(), pulse2_.output(), triangle_.output(), 0, 0)));
+
+            // downsample by writing every second sample
+            if (write_sample) {
+                *write_pointer_++ = lpf.calculate_filtered_sample();
+            }
+            write_sample = !write_sample;
 
             if (write_pointer_ == sample_buffer_.end()) {
                 write_pointer_ = sample_buffer_.begin();
@@ -539,6 +547,9 @@ class audio_processing_unit {
     vector<float> sample_buffer_ = vector<float>(44100); // TODO: ring buffer type
     vector<float>::iterator write_pointer_{sample_buffer_.begin()};
     vector<float>::iterator read_pointer_{sample_buffer_.begin()};
+    first_order_highpass_filter<sample_rate, 37> hpf;
+    antialiasing_filter lpf;
+    bool write_sample = false;
 };
 
 } // namespace nes

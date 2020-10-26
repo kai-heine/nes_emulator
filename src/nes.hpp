@@ -1,7 +1,7 @@
 #ifndef NES_NES_HPP
 #define NES_NES_HPP
 
-#include "apu.hpp"
+#include "apu/apu.hpp"
 #include "controller.hpp"
 #include "cpu/cpu.hpp"
 #include "cpu/instructions.hpp"

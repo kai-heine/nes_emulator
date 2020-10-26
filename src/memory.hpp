@@ -1,7 +1,7 @@
 #ifndef NES_MEMORY_HPP
 #define NES_MEMORY_HPP
 
-#include "apu.hpp"
+#include "apu/apu.hpp"
 #include "cartridge.hpp"
 #include "controller.hpp"
 #include "ppu.hpp"
