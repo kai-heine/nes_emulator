@@ -257,6 +257,10 @@ int main(int argc, char** argv) {
             }
 
             auto const samples = nes.sample_buffer();
+
+            // get number of samples still pending before enqueueing new samples
+            auto queued_samples = SDL_GetQueuedAudioSize(audio_device.get()) / sizeof(float);
+
             SDL_QueueAudio(audio_device.get(), samples.data(),
                            static_cast<u32>(samples.size_bytes()));
 
@@ -279,26 +283,17 @@ int main(int argc, char** argv) {
             sdl::checked(SDL_RenderCopy(renderer.get(), render_texture.get(), nullptr, nullptr));
             SDL_RenderPresent(renderer.get());
 
-            // synchronize video to audio by waiting for number of samples / sample rate
-            // TODO: find a better way
+            // audio/video sync: try to always have 2 frames worth of samples in audio queue
+            // and adjust the video framerate accordingly
+            constexpr auto queue_target = 2 * (audio_processing_unit::sample_rate / 60.0);
+            auto delay_adjust = queued_samples / queue_target;
 
-            auto const end =
-                start + duration<double>{samples.size() /
-                                         static_cast<double>(audio_processing_unit::sample_rate)};
+            auto const end = start + duration<double>{delay_adjust * samples.size() /
+                                                      audio_processing_unit::sample_rate};
 
-            std::this_thread::sleep_until(end - 3ms);
-            start = steady_clock::now();
-
-            while (start < end) {
-                std::this_thread::yield();
-                start = steady_clock::now();
-            }
+            std::this_thread::sleep_until(end);
 
             start = steady_clock::now();
-
-            // another approach to try: audio callback and wait depending on apu cycles
-            // or: wait more/less depending on distance between read and write pointer in audio
-            // buffer
         }
     } catch (std::exception const& e) {
         spdlog::critical("Error: {}", e.what());

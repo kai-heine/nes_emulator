@@ -184,7 +184,7 @@ class sweep_generator {
   private:
     u8 shift_count_ : 3 {};
     bool negate_ : 1 {};
-    u8 padding : 3 {};
+    [[maybe_unused]] u8 padding : 3 {};
     bool enabled_ : 1 {};
 
     bool reload_{};
@@ -318,7 +318,7 @@ class pulse_channel {
 
 class triangle_channel {
   public:
-    enum class registers : u8 { linear_counter_setup, timer_low = 2, timer_high };
+    enum class registers : u8 { linear_counter_setup, unused, timer_low, timer_high };
 
     constexpr void handle_register_write(registers register_select, u8 value) noexcept {
         switch (register_select) {
@@ -331,7 +331,7 @@ class triangle_channel {
                 length_counter_.carry_on();
             }
         } break;
-
+        case registers::unused: break;
         case registers::timer_low: {
             utility::set_lower_byte(sequence_timer_.reload_value, value);
         } break;
