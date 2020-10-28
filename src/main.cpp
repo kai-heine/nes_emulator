@@ -273,7 +273,7 @@ int main(int argc, char** argv) {
                 void* pixels{nullptr};
                 int pitch{};
 
-                sdl::checked(SDL_LockTexture(render_texture.get(), NULL, &pixels, &pitch));
+                sdl::checked(SDL_LockTexture(render_texture.get(), nullptr, &pixels, &pitch));
                 sdl::checked(SDL_ConvertPixels(
                     render_surface->w, render_surface->h, render_surface->format->format,
                     render_surface->pixels, render_surface->pitch, pixel_format, pixels, pitch));

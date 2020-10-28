@@ -387,7 +387,72 @@ class triangle_channel {
     bool control_{};
 };
 
-class noise_channel {};            // TODO
+class noise_channel {
+  public:
+    enum class registers : u8 { volume_envelope, unused, mode_period, length_counter_load };
+
+    constexpr void handle_register_write(registers register_select, u8 value) noexcept {
+        switch (register_select) {
+        case registers::volume_envelope: {
+            // TODO: this is duplication - refactor
+            envelope_.handle_register_write(value & 0x3f);
+            if ((value & 0x20) != 0) {
+                length_counter_.halt();
+            } else {
+                length_counter_.carry_on();
+            }
+        } break;
+        case registers::unused: break;
+        case registers::mode_period: {
+            mode_ = (value & 0x80) != 0;
+            timer_.reload_value = timer_periods_[value & 0x0f];
+        } break;
+        case registers::length_counter_load: {
+            length_counter_.set_length(value >> 3);
+            envelope_.restart();
+        } break;
+        default: assert(false);
+        }
+    }
+
+    // every second cpu cycle
+    constexpr void step() noexcept {
+        timer_.step();
+        if (timer_.clock()) {
+            u16 const feedback =
+                (((lfsr_ & 0x0001) ^ ((lfsr_ >> (mode_ ? 6 : 1)) & 0x0001)) << 14) & 0x4000;
+            lfsr_ >>= 1;
+            lfsr_ |= feedback;
+        }
+    }
+
+    constexpr void quarter_frame_step() noexcept { envelope_.step(); }
+
+    constexpr void half_frame_step() noexcept { length_counter_.step(); }
+
+    constexpr u8 output() const noexcept {
+        if (((lfsr_ & 0x0001) != 0) || (length_counter_.length() == 0)) {
+            return 0;
+        }
+        return envelope_.volume();
+    }
+
+    // TODO this is also the same for everything -> base class?
+    constexpr void enable() noexcept { length_counter_.enable(); }
+    constexpr void disable() noexcept { length_counter_.disable(); }
+    [[nodiscard]] constexpr bool enabled() const noexcept { return length_counter_.length() > 0; }
+
+  private:
+    static constexpr array<u16, 16> timer_periods_{
+        {4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068}};
+
+    envelope_generator envelope_;
+    timer<12> timer_;
+    length_counter length_counter_;
+    u16 lfsr_ : 15 {0x0001};
+    bool mode_{false};
+};
+
 class delta_modulation_channel {}; // TODO
 
 constexpr float mix(u8 pulse1, u8 pulse2, u8 triangle, u8 noise, u8 dmc) noexcept {
@@ -413,9 +478,10 @@ class audio_processing_unit {
         auto const frame_interrupt = frame_counter_.frame_interrupt();
         frame_counter_.clear_frame_interrupt();
 
-        // TODO: triangle, noise, dmc, dmc interrupt
+        // TODO: dmc, dmc interrupt
         return ((pulse1_.enabled() << 0) & 0x01) | ((pulse2_.enabled() << 1) & 0x02) |
-               ((triangle_.enabled() << 2) & 0x04) | ((frame_interrupt << 7) & 0x40);
+               ((triangle_.enabled() << 2) & 0x04) | ((noise_.enabled() << 3) & 0x08) |
+               ((frame_interrupt << 7) & 0x40);
     }
     constexpr void write(u16 address, u8 value) noexcept {
         assert(address >= 0x4000);
@@ -432,12 +498,13 @@ class audio_processing_unit {
             auto const triangle_register = static_cast<triangle_channel::registers>(address % 4);
             triangle_.handle_register_write(triangle_register, value);
         } else if (address < 0x10) {
-            // noise
+            auto const noise_register = static_cast<noise_channel::registers>(address % 4);
+            noise_.handle_register_write(noise_register, value);
         } else if (address < 0x14) {
             // dmc
         } else if (address == 0x15) {
             // status
-            // TODO: dmc, noise, triangle
+            // TODO: dmc
             // TODO: cleaner with enable(bool) ?
             if ((value & 0x01) != 0) {
                 pulse1_.enable();
@@ -453,6 +520,11 @@ class audio_processing_unit {
                 triangle_.enable();
             } else {
                 triangle_.disable();
+            }
+            if ((value & 0x08) != 0) {
+                noise_.enable();
+            } else {
+                noise_.disable();
             }
         } else if (address == 0x17) {
             frame_counter_.handle_register_write(value);
@@ -471,18 +543,21 @@ class audio_processing_unit {
         if (frame_counter_.apu_clock()) {
             pulse1_.step();
             pulse2_.step();
+            noise_.step();
         }
 
         if (frame_counter_.quarter_frame_clock()) {
             pulse1_.quarter_frame_step();
             pulse2_.quarter_frame_step();
             triangle_.quarter_frame_step();
+            noise_.quarter_frame_step();
         }
 
         if (frame_counter_.half_frame_clock()) {
             pulse1_.half_frame_step();
             pulse2_.half_frame_step();
             triangle_.half_frame_step();
+            noise_.half_frame_step();
         }
 
         // 2x oversampling
@@ -493,8 +568,8 @@ class audio_processing_unit {
 
             // TODO: stereo panning of channels would be cool
 
-            lpf.push_back(
-                hpf.process(mix(pulse1_.output(), pulse2_.output(), triangle_.output(), 0, 0)));
+            lpf.push_back(hpf.process(
+                mix(pulse1_.output(), pulse2_.output(), triangle_.output(), noise_.output(), 0)));
 
             // downsample by writing every second sample
             if (write_sample) {
