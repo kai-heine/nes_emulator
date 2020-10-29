@@ -150,37 +150,37 @@ TEST_CASE("pull_operation", "[instructions]") {
     cpu_state cpu{.pc = 0};
     instruction_state state{fetching_address{}};
 
-    u8 pull_value = 0;
+    auto op = [](cpu_state& cpu, u8 value) { cpu.a = value; };
 
     auto prev_cpu = cpu;
-    state = pull_operation(cpu, state, pull_value);
+    state = pull_operation(cpu, state, op);
     CHECK(cpu.pc == prev_cpu.pc);
     CHECK(cpu.address_bus == cpu.pc);
-    CHECK(pull_value == 0);
+    CHECK(cpu.a == 0);
 
     prev_cpu = cpu;
-    state = pull_operation(cpu, state, pull_value);
+    state = pull_operation(cpu, state, op);
     CHECK(cpu.pc == prev_cpu.pc);
     CHECK(cpu.address_bus == (stack_page | prev_cpu.s));
     CHECK(cpu.s == (prev_cpu.s + 1));
-    CHECK(pull_value == 0);
+    CHECK(cpu.a == 0);
 
     cpu.data_bus = 0x42;
 
     prev_cpu = cpu;
-    state = pull_operation(cpu, state, pull_value);
+    state = pull_operation(cpu, state, op);
     CHECK(cpu.pc == prev_cpu.pc);
     CHECK(cpu.address_bus == (stack_page | prev_cpu.s));
     CHECK(cpu.s == prev_cpu.s);
-    CHECK(pull_value == 0);
+    CHECK(cpu.a == 0);
 
     cpu.data_bus = 0x53;
 
     prev_cpu = cpu;
-    state = pull_operation(cpu, state, pull_value);
+    state = pull_operation(cpu, state, op);
     CHECK(cpu.pc == prev_cpu.pc);
     CHECK(cpu.address_bus == prev_cpu.pc);
-    CHECK(pull_value == 0x53);
+    CHECK(cpu.a == 0x53);
 }
 
 TEST_CASE("jump_to_subroutine", "[instructions]") {

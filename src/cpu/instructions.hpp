@@ -20,6 +20,7 @@ struct waiting {};
 using instruction_state = std::variant<fetching_opcode, fetching_address, storing_data, waiting>;
 using operation = void (*)(cpu_state&);
 using inout_operation = u8 (*)(cpu_state&, u8);
+using in_operation = void (*)(cpu_state&, u8);
 using branch_condition = bool (*)(cpu_state&);
 
 instruction_state step(cpu_state& cpu, instruction_state state) noexcept;
@@ -160,13 +161,12 @@ constexpr instruction_state push_operation(cpu_state& cpu, instruction_state sta
         state);
 }
 
-template <typename u8_writable>
 constexpr instruction_state pull_operation(cpu_state& cpu, instruction_state state,
-                                           u8_writable& register_to_pull) noexcept {
+                                           in_operation pull_register) noexcept {
     return std::visit( //
         overloaded{
             [&](fetching_opcode) -> instruction_state {
-                register_to_pull = cpu.data_bus;
+                pull_register(cpu, cpu.data_bus);
                 fetch_opcode(cpu);
                 return fetching_address{};
             },

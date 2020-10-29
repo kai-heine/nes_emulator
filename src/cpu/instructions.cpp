@@ -8,8 +8,7 @@ namespace nes {
 using instruction = instruction_state (*)(cpu_state&, instruction_state);
 
 instruction_state illegal(cpu_state&, instruction_state) noexcept {
-    assert(false);
-    return {};
+    std::abort();
 }
 
 template <addressing_mode Mode>
@@ -241,11 +240,14 @@ constexpr instruction_state PHP(cpu_state& cpu, instruction_state state) noexcep
 }
 
 constexpr instruction_state PLA(cpu_state& cpu, instruction_state state) noexcept {
-    return pull_operation(cpu, state, cpu.a);
+    return pull_operation(cpu, state, [](cpu_state& cpu, u8 value) {
+        cpu.a = value;
+        set_negative_zero(cpu, cpu.a);
+    });
 }
 
 constexpr instruction_state PLP(cpu_state& cpu, instruction_state state) noexcept {
-    return pull_operation(cpu, state, cpu.p);
+    return pull_operation(cpu, state, [](cpu_state& cpu, u8 value) { cpu.p = value; });
 }
 
 template <addressing_mode Mode>
