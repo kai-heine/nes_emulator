@@ -561,10 +561,10 @@ class audio_processing_unit {
         }
 
         // 2x oversampling
-        constexpr std::size_t cycles_per_sample = 1789773 / (sample_rate * 2);
-        cpu_cycle_count_++;
+        constexpr double cycles_per_sample = 1789773.0 / (sample_rate * 2);
+        cpu_cycle_count_ += 1.0;
         if (cpu_cycle_count_ > cycles_per_sample) {
-            cpu_cycle_count_ = 0; // rounding errors?
+            cpu_cycle_count_ -= cycles_per_sample;
 
             // TODO: stereo panning of channels would be cool
 
@@ -618,7 +618,7 @@ class audio_processing_unit {
     delta_modulation_channel dmc_{};
 
     // sampling
-    std::size_t cpu_cycle_count_{};
+    double cpu_cycle_count_{};
     vector<float> sample_buffer_ = vector<float>(44100); // TODO: ring buffer type
     vector<float>::iterator write_pointer_{sample_buffer_.begin()};
     vector<float>::iterator read_pointer_{sample_buffer_.begin()};
